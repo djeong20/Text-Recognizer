@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
 import torch
+import random
 
 class GNHK():
     def __init__(self, path):
@@ -56,12 +57,54 @@ class GNHK():
 
         return df
 
+class GNHKDataset(torch.utils.data.Dataset):
+    def __init__(self, df, root_dir, transforms=None):
+        super().__init__()
+
+        # Image_ids will be the "Filename" here
+        self.image_ids = df.image_id.unique()
+        self.sources = df.source.unique()
+
+        self.root_dir = root_dir
+        self.df = df
+        self.transforms = transforms
+
+    def load_image(self, index):
+        image_id = self.image_ids[index]
+        path = self.root_dir + image_id + '.jpg'
+
+        img = cv2.imread(path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32)
+        img /= 255.0
+
+        return img
+    
+    def __len__(self) -> int:
+        return self.image_ids.shape[0]
+
+    def __getitem__(self, index):
+
+        img = self.load_image(index)
+
+        image_id = self.image_ids[index]
+        data = self.df[self.df.image_id == image_id]
+
+        return img
 
 def main():
     gnhk = GNHK('gnhk/train')
     train_df = gnhk.getDataFrame()
 
     # print(train_df.head()) # Uncomment to see DataFrame
+
+    train_dataset = GNHKDataset(train_df, 'gnhk/train/')
+    
+    # Uncomment to see random image
+    img = train_dataset.__getitem__(random.randint(0, len(train_dataset)))
+    _, axe = plt.subplots(1, 1)
+    axe.imshow(img)
+    axe.axis('off')
+    plt.show()    
 
 
 if __name__ == "__main__":
