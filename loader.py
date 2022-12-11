@@ -114,16 +114,21 @@ def displayImage(image, bboxes, image_id):
     ax.set_title(image_id)
     plt.show()
 
-def main():
-    gnhk = GNHK('gnhk/train')
-    train_df = gnhk.getDataFrame()
+def collate_fn(batch):
+    return tuple(zip(*batch))
 
-    # print(train_df.head()) # Uncomment to see DataFrame
-    train_dataset = GNHKDataset(train_df, 'gnhk/train/')
+def main():
+    train, test = GNHK('gnhk/train'), GNHK('gnhk/test')
+
+    train_dataset = GNHKDataset(train.getDataFrame(), 'gnhk/train/')
+    test_dataset = GNHKDataset(test.getDataFrame(), 'gnhk/train/')
+
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
     
-    # Display random sample dataset
-    img, target, image_id = train_dataset[random.randint(0, len(train_dataset))]
-    displayImage(img, target['bboxes'].numpy().astype(np.int32), image_id)
+    # Display train dataset
+    imgs, targets, image_ids = next(iter(train_dataloader))
+    displayImage(imgs[0], targets[0]['bboxes'].numpy().astype(np.int32), image_ids[0])
 
 
 if __name__ == "__main__":
