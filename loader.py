@@ -100,7 +100,7 @@ class GNHKDataset(torch.utils.data.Dataset):
 
         return img, target, image_id
 
-def displayImage(image, bboxes):
+def displayImage(image, bboxes, image_id):
     fig, ax = plt.subplots(1, 1, figsize=(16, 8))
 
     for box in bboxes:
@@ -111,6 +111,7 @@ def displayImage(image, bboxes):
 
     ax.set_axis_off()
     ax.imshow(image)
+    ax.set_title(image_id)
     plt.show()
 
 def main():
@@ -121,8 +122,8 @@ def main():
     train_dataset = GNHKDataset(train_df, 'gnhk/train/')
     
     # Display random sample dataset
-    img, target, id = train_dataset[random.randint(0, len(train_dataset))]
-    displayImage(img, target['bboxes'].numpy().astype(np.int32))
+    img, target, image_id = train_dataset[random.randint(0, len(train_dataset))]
+    displayImage(img, target['bboxes'].numpy().astype(np.int32), image_id)
 
 
 if __name__ == "__main__":
