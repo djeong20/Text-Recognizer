@@ -83,28 +83,46 @@ class GNHKDataset(torch.utils.data.Dataset):
         return self.image_ids.shape[0]
 
     def __getitem__(self, index):
-
-        img = self.load_image(index)
-
         image_id = self.image_ids[index]
         data = self.df[self.df.image_id == image_id]
 
-        return img
+        # Load Image
+        img = self.load_image(index)
+
+        # Bounding Boxes
+        boxes = data[['x0','y0','x1','y1','x2','y2','x3','y3']].values
+        boxes = torch.as_tensor(boxes,dtype=torch.float32)
+
+        target = {}
+        target['image_id'] = torch.tensor([index])
+        target['bboxes'] = boxes
+        target['text'] = data.text.values # TODO: labels to integer or string
+
+        return img, target, image_id
+
+def displayImage(image, bboxes):
+    fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+
+    for box in bboxes:
+        cv2.rectangle(image,
+                      (min(box[0::2]), min(box[1::2])),
+                      (max(box[0::2]), max(box[1::2])),
+                      (220, 0, 0), 3)
+
+    ax.set_axis_off()
+    ax.imshow(image)
+    plt.show()
 
 def main():
     gnhk = GNHK('gnhk/train')
     train_df = gnhk.getDataFrame()
 
     # print(train_df.head()) # Uncomment to see DataFrame
-
     train_dataset = GNHKDataset(train_df, 'gnhk/train/')
     
-    # Uncomment to see random image
-    img = train_dataset.__getitem__(random.randint(0, len(train_dataset)))
-    _, axe = plt.subplots(1, 1)
-    axe.imshow(img)
-    axe.axis('off')
-    plt.show()    
+    # Display random sample dataset
+    img, target, id = train_dataset[random.randint(0, len(train_dataset))]
+    displayImage(img, target['bboxes'].numpy().astype(np.int32))
 
 
 if __name__ == "__main__":
