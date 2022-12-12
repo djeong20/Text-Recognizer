@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
 import torch
-import random
 
 class GNHK():
     def __init__(self, path):
@@ -54,7 +53,6 @@ class GNHK():
     def getDataFrame(self):
         df = self.load_json()
         df = self.data_preprocess(df)
-
         return df
 
 class GNHKDataset(torch.utils.data.Dataset):
@@ -86,17 +84,34 @@ class GNHKDataset(torch.utils.data.Dataset):
         image_id = self.image_ids[index]
         data = self.df[self.df.image_id == image_id]
 
+        N = len(data)
+
         # Load Image
         img = self.load_image(index)
 
         # Bounding Boxes
-        boxes = data[['x0','y0','x1','y1','x2','y2','x3','y3']].values
+        box = data[['x0','y0','x1','y1','x2','y2','x3','y3']].values
+        boxes = []
+        for i in range(N):
+            pos = box[i]
+            xmin = np.min(pos[0::2])
+            xmax = np.max(pos[0::2])
+            ymin = np.min(pos[1::2])
+            ymax = np.max(pos[1::2])
+            boxes.append([xmin, ymin, xmax, ymax])
+
+        # boxes = data[['x0','y0','x1','y1','x2','y2','x3','y3']].values
         boxes = torch.as_tensor(boxes,dtype=torch.float32)
+        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
+        # All instances are not crowd
+        iscrowd = torch.zeros((N,), dtype=torch.int64)
 
         target = {}
         target['image_id'] = torch.tensor([index])
-        target['bboxes'] = boxes
-        target['text'] = data.text.values # TODO: labels to integer or string
+        target['boxes'] = boxes
+        target["area"] = area
+        target["iscrowd"] = iscrowd
+        target['text'] = data.text.values # TODO
 
         return img, target, image_id
 
@@ -105,8 +120,8 @@ def displayImage(image, bboxes, image_id):
 
     for box in bboxes:
         cv2.rectangle(image,
-                      (min(box[0::2]), min(box[1::2])),
-                      (max(box[0::2]), max(box[1::2])),
+                      (box[0], box[1]),
+                      (box[2], box[3]),
                       (220, 0, 0), 3)
 
     ax.set_axis_off()
@@ -128,7 +143,7 @@ def main():
     
     # Display train dataset
     imgs, targets, image_ids = next(iter(train_dataloader))
-    displayImage(imgs[0], targets[0]['bboxes'].numpy().astype(np.int32), image_ids[0])
+    displayImage(imgs[0], targets[0]['boxes'].numpy().astype(np.int32), image_ids[0])
 
 
 if __name__ == "__main__":
