@@ -1,12 +1,12 @@
 import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import cv2
 import torch
+import torchvision
+import argparse
 
-import albumentations as A
-from albumentations.pytorch.transforms import ToTensorV2
+from utils import get_train_transform, display_image
 
 class GNHK():
     def __init__(self, path):
@@ -133,35 +133,38 @@ class GNHKDataset(torch.utils.data.Dataset):
         target["iscrowd"] = iscrowd
         # target['text'] = data.text.values # TODO
 
+        if self.transforms:
+            transformed = {'image': img, 'bboxes': target['boxes'], 'labels': labels}
+            transformed = self.transforms(**transformed)
+            
+            img = transformed['image']
+            target['boxes'] = torch.as_tensor(transformed['bboxes'],dtype=torch.float32)
+            target['labels'] = torch.as_tensor(transformed['labels'])
+        else:
+            img = torchvision.transforms.functional.to_tensor(img)
+
         return img, target
-
-# Background=Blue, Text=Red, Math=Green, Scribbles=Yellow
-colors = [(0, 0, 255), (255, 0, 0), (0, 255, 0), (255, 255, 0)]
-
-def displayImage(image, bboxes, labels):
-    fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-
-    for idx, box in enumerate(bboxes):
-        cv2.rectangle(image,
-                      (box[0], box[1]),
-                      (box[2], box[3]),
-                      colors[labels[idx]], 3)
-
-    ax.set_axis_off()
-    ax.imshow(image)
-    plt.show()
 
 def collate_fn(batch):
     return tuple(zip(*batch))
 
-def verify_dataset():
-    train = GNHK('gnhk/train')
-    train_dataset = GNHKDataset(train.getDataFrame(), 'gnhk/train/')
+def verify_dataset(args):
+    train = GNHK(args.data)
+    transform = get_train_transform() if args.transform else None
+    train_dataset = GNHKDataset(train.getDataFrame(), args.data, transforms=transform)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
-    # Display train dataset
     imgs, targets = next(iter(train_dataloader))
-    displayImage(imgs[0], targets[0]['boxes'].numpy().astype(np.int32), targets[0]['labels'].numpy().astype(np.int32))
+
+    # Display train dataset
+    display_image(imgs[0], targets[0]['boxes'], targets[0]['labels'])
 
 
 if __name__ == "__main__":
-    verify_dataset()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--data', type=str, default='gnhk/train/', help='path to dataset')
+    parser.add_argument('--transform', type=bool, default=False, help='transformation')
+    
+    args = parser.parse_args()
+
+    verify_dataset(args)
