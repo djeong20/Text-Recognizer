@@ -25,18 +25,35 @@ Text-Recognizer
     └── train
 ```
 
+### Check Data Pipeline
+
+```
+ python3 dataset.py --data='gnhk/train/' --transform=False 
+```
+#### Arguments
+* `--data`: folder path to gnhk dataset.
+* `--transform`: transformation. (default=False)
+
+
 ### Training
 
 ```
- python3 train.py \
---batch_size BATCH_SIZE \
---n_epochs N_EPOCHS \
---grad_clip GRAD_CLIP \
---workers WORKERS
+ python3 train.py --train_data='gnhk/train/' --valid_data='gnhk/test/' \
+ --train_trans=True --valid_trans=True \
+ --batch_size=16 --n_epochs=5 --grad_clip=0.5 --workers=4
 ```
+#### Arguments
+* `--train_data`: folder path to gnhk training dataset.
+* `--valid_data`: folder path to gnhk validation dataset.
+* `--train_trans`: transformation in training. (default=True)
+* `--valid_trans`: transformation in validation. (default=True)
+* `--batch_size`: input batch size. (default=16)
+* `--n_epochs`: number of epoches. (default=5)
+* `--grad_clip`: gradient clipping value. (default=0.5)
+* `--workers`: number of data loading workers. (default=4)
 
-### Arguments
-* `--batch_size`: input batch size
-* `--n_epochs`: number of epoches
-* `--grad_clip`: gradient clipping value
-* `--workers`: number of data loading workers
+
+
+
+
+
