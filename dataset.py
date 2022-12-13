@@ -118,8 +118,10 @@ class GNHKDataset(torch.utils.data.Dataset):
             boxes.append([xmin, ymin, xmax, ymax])
 
         # boxes = data[['x0','y0','x1','y1','x2','y2','x3','y3']].values
-        boxes = torch.as_tensor(boxes,dtype=torch.float32)
+        boxes = torch.as_tensor(boxes, dtype=torch.float32)
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
+        area = torch.as_tensor(area, dtype=torch.float32)
+
         # All instances are not crowd
         iscrowd = torch.zeros((N,), dtype=torch.int64)
 
@@ -129,9 +131,9 @@ class GNHKDataset(torch.utils.data.Dataset):
         target['boxes'] = boxes
         target["area"] = area
         target["iscrowd"] = iscrowd
-        target['text'] = data.text.values # TODO
+        # target['text'] = data.text.values # TODO
 
-        return img, target, image_id
+        return img, target
 
 # Background=Blue, Text=Red, Math=Green, Scribbles=Yellow
 colors = [(0, 0, 255), (255, 0, 0), (0, 255, 0), (255, 255, 0)]
@@ -152,19 +154,14 @@ def displayImage(image, bboxes, labels):
 def collate_fn(batch):
     return tuple(zip(*batch))
 
-def main():
-    train, test = GNHK('gnhk/train'), GNHK('gnhk/test')
-
+def verify_dataset():
+    train = GNHK('gnhk/train')
     train_dataset = GNHKDataset(train.getDataFrame(), 'gnhk/train/')
-    test_dataset = GNHKDataset(test.getDataFrame(), 'gnhk/train/')
-
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
-    
     # Display train dataset
-    imgs, targets, image_ids = next(iter(train_dataloader))
+    imgs, targets = next(iter(train_dataloader))
     displayImage(imgs[0], targets[0]['boxes'].numpy().astype(np.int32), targets[0]['labels'].numpy().astype(np.int32))
 
 
 if __name__ == "__main__":
-    main()
+    verify_dataset()
