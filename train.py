@@ -1,4 +1,3 @@
-
 import numpy as np
 import argparse
 import tqdm
@@ -12,6 +11,7 @@ from dataset import GNHK, GNHKDataset
 from utils import Averager, CTCLabelConverter
 from utils import get_train_transform, get_validate_transform, get_box_images
 from model import Model
+import Levenshtein
 
 def collate_fn(batch):
     return tuple(zip(*batch))
@@ -130,18 +130,32 @@ def train(args):
                 # TODO: 1. Need to decode preds2 to texts to compute CAR/WAR (TEMP: Need to perform this in evaluation section)
                 _, preds_index = preds2.max(2)
                 preds_str = converter.decode(preds_index.data, preds_size.data)
-                print(preds_str)
-
 
                 # TODO: 2. After 1, compute CAR / WAR using target_text (TEMP: Need to perform this in evaluation section)
-
                 crnn_model.zero_grad()
                 crnn_cost.backward()
                 torch.nn.utils.clip_grad_norm_(crnn_model.parameters(), args.grad_clip)  # gradient clipping with 5 (Default)
                 rec_optimizer.step()
-        
+ 
+                car = 0
+                distance = 0
+                for pred, target in zip(preds_str, target_text):
+                    edit_distance = Levenshtein.distance(pred, target)
+                    distance = 1 - edit_distance / max(len(pred), len(target))
+                    car += distance
+                    
+                car /= len(target_text)
+                               
+                war = 0
+                for pred, target in zip(preds_str, target_text):
+                    if pred == target:
+                        war += 1
+                war /= len(target_text)
+                
         print(f"Epoch {epoch+1}/{args.n_epochs}")
         print(f"Train loss: {train_loss_avg.val:0.5f}")
+        print(f"Car: {car:0.5f}")
+        print(f"War: {war:0.5f}")
         
         # update the learning rate
         lr_scheduler.step(cost)
@@ -158,6 +172,7 @@ def train(args):
         """
 
         train_loss_avg.reset()
+    
         
         torch.save(rcnn_model.state_dict(), 'text-localization.pth')
         torch.save(crnn_model.state_dict(), 'text-recognition.pth')
