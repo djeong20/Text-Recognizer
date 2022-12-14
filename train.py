@@ -104,18 +104,22 @@ def train(args):
                 trans_list = []
                 for img in img_list:
                     trans_list.append(transform(img))
-                print("Num:", len(img_list))
 
                 img = torch.stack(trans_list).to(device)
-                text, length = converter.encode(texts[idx])
+
+                target_text = texts[idx] # Later used to compute CAR / WAR
+                text, length = converter.encode(target_text)
 
                 preds2 = crnn_model(img)
                 preds_size = torch.IntTensor([preds2.size(1)] * len(img_list))
 
-                preds2 = preds2.log_softmax(2).permute(1, 0, 2)
+                preds2 = preds2.log_softmax(2)
 
-                crnn_cost = criterion(preds2, text, preds_size, length)
-                print(crnn_cost)
+                # TODO: 1. Need to decode preds2 to texts to compute CAR/WAR
+
+                crnn_cost = criterion(preds2.permute(1, 0, 2), text, preds_size, length)
+
+                # TODO: 2. After 1, compute CAR / WAR using target_text
 
                 crnn_model.zero_grad()
                 crnn_cost.backward()
