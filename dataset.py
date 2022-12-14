@@ -132,7 +132,7 @@ class GNHKDataset(torch.utils.data.Dataset):
         target['boxes'] = boxes
         target["area"] = area
         target["iscrowd"] = iscrowd
-        target['text'] = data.text.values # TODO
+        # target['text'] = data.text.values # TODO
 
         if self.transforms:
             transformed = {'image': img, 'bboxes': target['boxes'], 'labels': labels}
@@ -144,7 +144,7 @@ class GNHKDataset(torch.utils.data.Dataset):
         else:
             img = torchvision.transforms.functional.to_tensor(img)
 
-        return img, target
+        return img, target, data.text.values
 
 def collate_fn(batch):
     return tuple(zip(*batch))

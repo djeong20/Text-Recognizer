@@ -9,7 +9,9 @@ from torchvision.models.detection import FasterRCNN_ResNet50_FPN_Weights
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 from dataset import GNHK, GNHKDataset
-from utils import Averager, get_train_transform, get_validate_transform
+from utils import Averager, CTCLabelConverter
+from utils import get_train_transform, get_validate_transform, get_box_images
+from model import Model
 
 def collate_fn(batch):
     return tuple(zip(*batch))
@@ -26,15 +28,16 @@ def train(args):
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
     
     # Model: Faster R-CNN
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
-    input_features = model.roi_heads.box_predictor.cls_score.in_features
+    rcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
+    input_features = rcnn_model.roi_heads.box_predictor.cls_score.in_features
     output_features = 4 # %NA%, text, %math%, %SC%
-    model.roi_heads.box_predictor = FastRCNNPredictor(input_features, output_features) 
+    rcnn_model.roi_heads.box_predictor = FastRCNNPredictor(input_features, output_features) 
 
-    params = [p for p in model.parameters() if p.requires_grad]
+    params = [p for p in rcnn_model.parameters() if p.requires_grad]
 
     # Optimizers
     optimizer = torch.optim.Adam(params)
+
 
     # LR Scheduler
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=0.5)
@@ -43,24 +46,81 @@ def train(args):
     # Device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    # Model: CRNN 
+    converter = CTCLabelConverter()
+    crnn_model = Model()
+
+    # Optimizers
+    filtered_parameters = []
+    params_num = []
+    for p in filter(lambda p: p.requires_grad, crnn_model.parameters()):
+        filtered_parameters.append(p)
+        params_num.append(np.prod(p.size()))
+    # [print(name, p.numel()) for name, p in filter(lambda p: p[1].requires_grad, model.named_parameters())]
+
+    # setup optimizer
+    rec_optimizer = torch.optim.Adam(filtered_parameters, lr=0.001, betas=(0.9, 0.999))
+
+    for name, param in crnn_model.named_parameters():
+        if 'localization_fc2' in name:
+            print(f'Skip {name} as it is already initialized')
+            continue
+        try:
+            if 'bias' in name:
+                torch.nn.init.constant_(param, 0.0)
+            elif 'weight' in name:
+                torch.nn.init.kaiming_normal_(param)
+        except Exception as e:  # for batchnorm.
+            if 'weight' in name:
+                param.data.fill_(1)
+            continue
+
+    criterion = torch.nn.CTCLoss(zero_infinity=True).to(device)
+
     for epoch in range(args.n_epochs):
-        model.train()
+        rcnn_model.train()
         train_loss_avg.reset()
+        crnn_model.train()
         
         # train for one epoch
-        for (imgs, targets) in tqdm.tqdm(train_dataloader):
+        for (imgs, targets, texts) in tqdm.tqdm(train_dataloader):
             imgs = torch.stack(imgs).to(device)
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             
-            preds = model(imgs, targets)
+            preds = rcnn_model(imgs, targets)
             
             cost = sum(loss for loss in preds.values())
             train_loss_avg.update(cost.item(), imgs.shape[0])
 
-            model.zero_grad()
+            rcnn_model.zero_grad()
             cost.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+            torch.nn.utils.clip_grad_norm_(rcnn_model.parameters(), args.grad_clip)
             optimizer.step()
+
+            # crnn
+            for idx, image in enumerate(imgs):
+                img_list = get_box_images(image, targets[idx]['boxes'])
+                transform = torchvision.transforms.Resize((32,32))
+                trans_list = []
+                for img in img_list:
+                    trans_list.append(transform(img))
+                print("Num:", len(img_list))
+
+                img = torch.stack(trans_list).to(device)
+                text, length = converter.encode(texts[idx])
+
+                preds2 = crnn_model(img)
+                preds_size = torch.IntTensor([preds2.size(1)] * len(img_list))
+
+                preds2 = preds2.log_softmax(2).permute(1, 0, 2)
+
+                crnn_cost = criterion(preds2, text, preds_size, length)
+                print(crnn_cost)
+
+                crnn_model.zero_grad()
+                crnn_cost.backward()
+                torch.nn.utils.clip_grad_norm_(crnn_model.parameters(), args.grad_clip)  # gradient clipping with 5 (Default)
+                rec_optimizer.step()
         
         print(f"Epoch {epoch+1}/{args.n_epochs}")
         print(f"Train loss: {train_loss_avg.val():0.5f}")
@@ -73,7 +133,7 @@ def train(args):
 
         train_loss_avg.reset()
         
-        torch.save(model.state_dict(), 'text-recognition.pth')
+        torch.save(rcnn_model.state_dict(), 'text-recognition.pth')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
