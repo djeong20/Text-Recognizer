@@ -26,11 +26,11 @@ class CTCLabelConverter(object):
 
         self.character = ['[CTCblank]'] + dict_character  # dummy '[CTCblank]' token for CTCLoss (index 0)
 
-    def encode(self, text, batch_max_length=25):
+    def encode(self, text, batch_max_length=50):
         """convert text-label into text-index.
         input:
             text: text labels of each image. [batch_size]
-            batch_max_length: max length of text label in the batch. 25 by default
+            batch_max_length: max length of text label in the batch. 50 by default
         output:
             text: text index for CTCLoss. [batch_size, batch_max_length]
             length: length of each text. [batch_size]
@@ -41,7 +41,7 @@ class CTCLabelConverter(object):
         batch_text = torch.LongTensor(len(text), batch_max_length).fill_(0)
         for i, t in enumerate(text):
             text = list(t)
-            text = [self.dict[char] for char in text]
+            text = [self.dict[char] if char != '£' else self.dict['L'] for char in text]
             batch_text[i][:len(text)] = torch.LongTensor(text)
         return (batch_text.to(device), torch.IntTensor(length).to(device))
 
