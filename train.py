@@ -125,12 +125,13 @@ def train(args):
 
                 preds2 = preds2.log_softmax(2)
 
+                crnn_cost = criterion(preds2.permute(1, 0, 2), text, preds_size, length)
+
                 # TODO: 1. Need to decode preds2 to texts to compute CAR/WAR (TEMP: Need to perform this in evaluation section)
                 _, preds_index = preds2.max(2)
                 preds_str = converter.decode(preds_index.data, preds_size.data)
                 print(preds_str)
 
-                crnn_cost = criterion(preds2.permute(1, 0, 2), text, preds_size, length)
 
                 # TODO: 2. After 1, compute CAR / WAR using target_text (TEMP: Need to perform this in evaluation section)
 
