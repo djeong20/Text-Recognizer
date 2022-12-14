@@ -34,7 +34,7 @@ def get_validate_transform():
         ToTensorV2(p=1.0)
     ], bbox_params={'format': 'pascal_voc', 'label_fields': ['labels']})
 
-def display_image(image, bboxes, labels):
+def display_image(image, bboxes, labels, text):
     # Background=Blue, Text=Red, Math=Green, Scribbles=Yellow
     colors = [(0, 0, 255), (255, 0, 0), (0, 255, 0), (255, 255, 0)]
 
@@ -49,7 +49,30 @@ def display_image(image, bboxes, labels):
                       (box[0], box[1]),
                       (box[2], box[3]),
                       colors[np_labels[idx]], 3)
+        cv2.putText(np_img, text[idx], (box[0], box[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
     ax.set_axis_off()
     ax.imshow(np_img)
+    plt.show()
+
+def get_box_images(image, boxes):
+    img_list = []
+
+    for x0, y0, x1, y1 in boxes:
+        img_list.append(image[:, int(y0):int(y1), int(x0):int(x1)])
+
+    return img_list
+
+def display_images(img_list, texts):
+    plt.figure(figsize=(16, 8))
+    size = int(np.sqrt(len(img_list)))+1
+
+    for idx, img in enumerate(img_list):
+        np_img = img.permute(1,2,0).cpu().numpy().copy()
+        
+        plt.subplot(size, size, idx+1)
+        plt.title(texts[idx])
+        plt.axis('off')
+        plt.imshow(np_img)
+    
     plt.show()

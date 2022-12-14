@@ -5,8 +5,9 @@ import cv2
 import torch
 import torchvision
 import argparse
+import random
 
-from utils import get_train_transform, display_image
+from utils import get_train_transform, display_image, display_images, get_box_images
 
 class GNHK():
     def __init__(self, path):
@@ -131,7 +132,7 @@ class GNHKDataset(torch.utils.data.Dataset):
         target['boxes'] = boxes
         target["area"] = area
         target["iscrowd"] = iscrowd
-        # target['text'] = data.text.values # TODO
+        target['text'] = data.text.values # TODO
 
         if self.transforms:
             transformed = {'image': img, 'bboxes': target['boxes'], 'labels': labels}
@@ -152,12 +153,16 @@ def verify_dataset(args):
     train = GNHK(args.data)
     transform = get_train_transform() if args.transform else None
     train_dataset = GNHKDataset(train.getDataFrame(), args.data, transforms=transform)
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
-    imgs, targets = next(iter(train_dataloader))
+    
+    # train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    image, target = train_dataset.__getitem__(random.randint(0, len(train_dataset)))
+    img_list = get_box_images(image, target['boxes'])
 
     # Display train dataset
-    display_image(imgs[0], targets[0]['boxes'], targets[0]['labels'])
+    display_image(image, target['boxes'], target['labels'], target['text'])
 
+    # Display text image by bounding boxes
+    display_images(img_list, target['text'])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
