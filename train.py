@@ -155,7 +155,8 @@ def train(args):
 
         train_loss_avg.reset()
         
-        torch.save(rcnn_model.state_dict(), 'text-recognition.pth')
+        torch.save(rcnn_model.state_dict(), 'text-localization.pth')
+        torch.save(crnn_model.state_dict(), 'text-recognition.pth')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
