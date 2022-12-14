@@ -26,39 +26,44 @@ def train(args):
     valid_transform = get_validate_transform() if args.valid_trans else None
     val_dataset = GNHKDataset(validate.getDataFrame(), args.valid_data, transforms=valid_transform)
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
+
+    # Device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
+    """ Faster R-CNN """
     # Model: Faster R-CNN / TODO: Replace with our own model
     rcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
     input_features = rcnn_model.roi_heads.box_predictor.cls_score.in_features
     output_features = 4 # %NA%, text, %math%, %SC%
     rcnn_model.roi_heads.box_predictor = FastRCNNPredictor(input_features, output_features) 
 
+    # Optimizers (Faster RCNN)
     params = [p for p in rcnn_model.parameters() if p.requires_grad]
-
-    # Optimizers
     optimizer = torch.optim.Adam(params)
 
+    # LR Scheduler (Faster RCNN)
+    lr_scheduler1 = torch.optim.lr_scheduler.StepLR(optimizer, step_size=0.5)
+    rcnn_train_loss_avg = Averager()
+    rcnn_valid_loss_avg = Averager()
 
-    # LR Scheduler
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=0.5)
-    train_loss_avg = Averager()
-
-    # Device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    """ CRNN """
     # Model: CRNN 
     converter = CTCLabelConverter()
     crnn_model = Model()
 
-    # Optimizers
+    # Optimizers (CRNN)
     filtered_parameters = []
     params_num = []
     for p in filter(lambda p: p.requires_grad, crnn_model.parameters()):
         filtered_parameters.append(p)
         params_num.append(np.prod(p.size()))
 
-    # setup optimizer
     rec_optimizer = torch.optim.Adam(filtered_parameters, lr=0.001, betas=(0.9, 0.999))
+
+    # LR Scheduler (CRNN)
+    lr_scheduler2 = torch.optim.lr_scheduler.StepLR(optimizer, step_size=0.5)
+    crnn_train_loss_avg = Averager()
+    crnn_valid_loss_avg = Averager()
 
     for name, param in crnn_model.named_parameters():
         if 'localization_fc2' in name:
@@ -78,8 +83,7 @@ def train(args):
 
     for epoch in range(args.n_epochs):
         rcnn_model.train()
-        train_loss_avg.reset()
-        crnn_model.train()
+        rcnn_train_loss_avg.reset()
         
         # train for one epoch
         for (imgs, targets, texts) in tqdm.tqdm(train_dataloader):
@@ -99,20 +103,23 @@ def train(args):
             """
             preds = rcnn_model(imgs, targets)
             
-            cost = sum(loss for loss in preds.values())
-            train_loss_avg.update(cost.item(), imgs.shape[0])
+            rcnn_cost = sum(loss for loss in preds.values())
+            rcnn_train_loss_avg.update(rcnn_cost.item(), imgs.shape[0])
 
             rcnn_model.zero_grad()
-            cost.backward()
+            rcnn_cost.backward()
             torch.nn.utils.clip_grad_norm_(rcnn_model.parameters(), args.grad_clip)
             optimizer.step()
 
-            # crnn
+            # CRNN part
+            crnn_model.train()
+            crnn_train_loss_avg.reset()
+
             for idx, image in enumerate(imgs):
-                img_list = get_box_images(image, targets[idx]['boxes'])
+                image_boxes = get_box_images(image, targets[idx]['boxes'])
                 transform = torchvision.transforms.Resize((32,32))
                 trans_list = []
-                for img in img_list:
+                for img in image_boxes:
                     trans_list.append(transform(img))
 
                 img = torch.stack(trans_list).to(device)
@@ -120,59 +127,98 @@ def train(args):
                 target_text = texts[idx] # This will later be used to compute CAR / WAR
                 text, length = converter.encode(target_text)
 
-                preds2 = crnn_model(img)
-                preds_size = torch.IntTensor([preds2.size(1)] * len(img_list))
+                crnn_preds = crnn_model(img)
+                preds_size = torch.IntTensor([crnn_preds.size(1)] * len(image_boxes))
 
-                preds2 = preds2.log_softmax(2)
+                crnn_cost = criterion(crnn_preds.log_softmax(2).permute(1, 0, 2), text, preds_size, length)
+                crnn_train_loss_avg.update(crnn_cost.item(), len(image_boxes))
 
-                crnn_cost = criterion(preds2.permute(1, 0, 2), text, preds_size, length)
-
-                # TODO: 1. Need to decode preds2 to texts to compute CAR/WAR (TEMP: Need to perform this in evaluation section)
-                _, preds_index = preds2.max(2)
-                preds_str = converter.decode(preds_index.data, preds_size.data)
-
-                # TODO: 2. After 1, compute CAR / WAR using target_text (TEMP: Need to perform this in evaluation section)
                 crnn_model.zero_grad()
                 crnn_cost.backward()
                 torch.nn.utils.clip_grad_norm_(crnn_model.parameters(), args.grad_clip)  # gradient clipping with 5 (Default)
                 rec_optimizer.step()
- 
-                car = 0
-                distance = 0
-                for pred, target in zip(preds_str, target_text):
-                    edit_distance = Levenshtein.distance(pred, target)
-                    distance = 1 - edit_distance / max(len(pred), len(target))
-                    car += distance
-                    
-                car /= len(target_text)
-                               
-                war = 0
-                for pred, target in zip(preds_str, target_text):
-                    if pred == target:
-                        war += 1
-                war /= len(target_text)
-                
+
+            # update the learning rate for CRNN
+            lr_scheduler2.step(crnn_cost)
+            
+            # Uncomment to check evaluation faster
+            # break 
+
         print(f"Epoch {epoch+1}/{args.n_epochs}")
-        print(f"Train loss: {train_loss_avg.val:0.5f}")
-        print(f"Car: {car:0.5f}")
-        print(f"War: {war:0.5f}")
+        print(f"Train loss (Faster R-CNN): {rcnn_train_loss_avg.val:0.5f}")
+        print(f"Train loss (CRNN): {crnn_train_loss_avg.val:0.5f}")
         
-        # update the learning rate
-        lr_scheduler.step(cost)
+        # update the learning rate for Faster R-CNN
+        lr_scheduler1.step(rcnn_cost)
+
 
         """ 
-        TODO: Evaluate both localization and recognition using Testing dataset 
+        TODO: Evaluate both localization using Testing dataset 
         
         Localization evaluation: Sanghyuk Seo
         Expected results: cost, IOU, accuracy, recall, precision, F-score
 
-        Recognition evalution: Eunjeong Ro 
+        Recognition evalution: Eunjeong Ro (DONE)
         Expected results: cost, CAR, WAR (expected to be around 0)
 
         """
 
-        train_loss_avg.reset()
-    
+        print("Evaluating models...")
+        crnn_model.eval()
+
+        with torch.no_grad():
+            # 1. Load validation dataset
+            
+            rcnn_valid_loss_avg.reset() # TODO
+            crnn_valid_loss_avg.reset()
+
+            for (imgs, targets, texts) in val_dataloader:
+                # TODO: Evaluate Faster R-CNN
+
+                # Evaluate CRNN using test dataset
+                for idx, image in enumerate(imgs):
+                    image_boxes = get_box_images(image, targets[idx]['boxes'])
+                    transform = torchvision.transforms.Resize((32,32))
+                    trans_list = []
+                    for img in image_boxes:
+                        trans_list.append(transform(img))
+
+                    img = torch.stack(trans_list).to(device)
+
+                    target_text = texts[idx] # This will later be used to compute CAR / WAR
+                    text, length = converter.encode(target_text)
+
+                    crnn_preds = crnn_model(img)
+                    preds_size = torch.IntTensor([crnn_preds.size(1)] * len(image_boxes))
+
+                    crnn_preds = crnn_preds.log_softmax(2)
+
+                    crnn_cost = criterion(crnn_preds.permute(1, 0, 2), text, preds_size, length)
+                    crnn_valid_loss_avg.update(crnn_cost.item(), len(image_boxes))
+
+                    _, preds_index = crnn_preds.max(2)
+                    preds_str = converter.decode(preds_index.data, preds_size.data)
+                    
+                    car = 0
+                    distance = 0
+                    for pred, target in zip(preds_str, target_text):
+                        edit_distance = Levenshtein.distance(pred, target)
+                        distance = 1 - edit_distance / max(len(pred), len(target))
+                        car += distance
+                        
+                    car /= len(target_text)
+                                    
+                    war = 0
+                    for pred, target in zip(preds_str, target_text):
+                        if pred == target:
+                            war += 1
+                    war /= len(target_text)
+
+            # print(f"Valid loss (Faster R-CNN): {rcnn_valid_loss_avg.val:0.5f}") # TODO
+            print(f"Test loss (CRNN): {crnn_valid_loss_avg.val:0.5f}")
+            print(f"CAR: {car:0.5f}")
+            print(f"WAR: {war:0.5f}")
+
         
         torch.save(rcnn_model.state_dict(), 'text-localization.pth')
         torch.save(crnn_model.state_dict(), 'text-recognition.pth')
