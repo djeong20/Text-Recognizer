@@ -155,14 +155,14 @@ def verify_dataset(args):
     train_dataset = GNHKDataset(train.getDataFrame(), args.data, transforms=transform)
     
     # train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, collate_fn=collate_fn)
-    image, target = train_dataset.__getitem__(random.randint(0, len(train_dataset)))
+    image, target, text = train_dataset.__getitem__(random.randint(0, len(train_dataset)))
     img_list = get_box_images(image, target['boxes'])
 
     # Display train dataset
-    display_image(image, target['boxes'], target['labels'], target['text'])
+    display_image(image, target['boxes'], target['labels'],text)
 
     # Display text image by bounding boxes
-    display_images(img_list, target['text'])
+    display_images(img_list, text)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
