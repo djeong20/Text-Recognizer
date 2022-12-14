@@ -27,7 +27,7 @@ def train(args):
     val_dataset = GNHKDataset(validate.getDataFrame(), args.valid_data, transforms=valid_transform)
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
     
-    # Model: Faster R-CNN
+    # Model: Faster R-CNN / TODO: Replace with our own model
     rcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
     input_features = rcnn_model.roi_heads.box_predictor.cls_score.in_features
     output_features = 4 # %NA%, text, %math%, %SC%
@@ -56,7 +56,6 @@ def train(args):
     for p in filter(lambda p: p.requires_grad, crnn_model.parameters()):
         filtered_parameters.append(p)
         params_num.append(np.prod(p.size()))
-    # [print(name, p.numel()) for name, p in filter(lambda p: p[1].requires_grad, model.named_parameters())]
 
     # setup optimizer
     rec_optimizer = torch.optim.Adam(filtered_parameters, lr=0.001, betas=(0.9, 0.999))
@@ -87,6 +86,17 @@ def train(args):
             imgs = torch.stack(imgs).to(device)
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             
+            """ 
+            TODO: Replace with our own model (Sanghyuk Seo)
+            -- Need our model that outputs label and bounding boxes 
+            
+            e.g. labels, bboxes = rcnn_model(imgs, targets)
+
+            -> Use labels to compute accuracy
+            -> Use bboxes to compute IOU
+            -> Use both to compute recall, precision, f-measure
+
+            """
             preds = rcnn_model(imgs, targets)
             
             cost = sum(loss for loss in preds.values())
@@ -107,7 +117,7 @@ def train(args):
 
                 img = torch.stack(trans_list).to(device)
 
-                target_text = texts[idx] # Later used to compute CAR / WAR
+                target_text = texts[idx] # This will later be used to compute CAR / WAR
                 text, length = converter.encode(target_text)
 
                 preds2 = crnn_model(img)
@@ -115,11 +125,11 @@ def train(args):
 
                 preds2 = preds2.log_softmax(2)
 
-                # TODO: 1. Need to decode preds2 to texts to compute CAR/WAR
+                # TODO: 1. Need to decode preds2 to texts to compute CAR/WAR (TEMP: Need to perform this in evaluation section)
 
                 crnn_cost = criterion(preds2.permute(1, 0, 2), text, preds_size, length)
 
-                # TODO: 2. After 1, compute CAR / WAR using target_text
+                # TODO: 2. After 1, compute CAR / WAR using target_text (TEMP: Need to perform this in evaluation section)
 
                 crnn_model.zero_grad()
                 crnn_cost.backward()
@@ -132,8 +142,16 @@ def train(args):
         # update the learning rate
         lr_scheduler.step(cost)
 
-        # TODO: evaluate on the test dataset
+        """ 
+        TODO: Evaluate both localization and recognition using Testing dataset 
+        
+        Localization evaluation: Sanghyuk Seo
+        Expected results: cost, IOU, accuracy, recall, precision, F-score
 
+        Recognition evalution: Eunjeong Ro 
+        Expected results: cost, CAR, WAR (expected to be around 0)
+
+        """
 
         train_loss_avg.reset()
         
