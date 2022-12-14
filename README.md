@@ -17,8 +17,8 @@ The structure of folder as below.
 Text-Recognizer
 ├── README.md
 ├── dataset.py
+├── model.py
 ├── train.py
-├── demo.py
 ├── utils.py
 └── gnhk
     ├── test
