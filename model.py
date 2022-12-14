@@ -1,9 +1,20 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
+# TODO: Sanghyuk Seo
+class Faster_RCNN(nn.Module):
+    """ Faster R-CNN (https://arxiv.org/pdf/1506.01497.pdf) """
+    def __init__(self, input_channel, output_channel):
+        # Write your code here
+        pass
+
+    def forward(self, input):
+        # Write your code here: need to return labels, bboxes
+        pass
+        
+
 class CRNN_FeatureExtractor(nn.Module):
     """ FeatureExtractor of CRNN (https://arxiv.org/pdf/1507.05717.pdf) """
-
     def __init__(self, input_channel, output_channel=512):
         super(CRNN_FeatureExtractor, self).__init__()
         self.output_channel = [int(output_channel / 8), int(output_channel / 4),
