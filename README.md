@@ -2,9 +2,9 @@
 
 ## Getting Started
 ### Dependency
-- requirements : numpy, pandas, matplotlib, pytorch, opencv-python, torchvision, and albumentations
+- requirements : numpy, pandas, matplotlib, pytorch, opencv-python, torchvision, albumentations, and Levenshtein
 ```
-pip3 install numpy pandas matplotlib opencv-python torch torchvision albumentations
+pip3 install numpy pandas tqdm matplotlib opencv-python torch torchvision albumentations Levenshtein
 ```
 
 ### Download GNHK dataset for training from [here](https://www.goodnotes.com/gnhk)
