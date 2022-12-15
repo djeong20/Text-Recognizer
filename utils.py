@@ -10,6 +10,9 @@ import torch
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+def collate_fn(batch):
+    return tuple(zip(*batch))
+
 # Code from ClovaAI: https://github.com/clovaai/deep-text-recognition-benchmark/blob/master/utils.py
 class CTCLabelConverter(object):
     """ Convert between text-label and text-index """
@@ -117,6 +120,16 @@ def get_box_images(image, boxes):
         img_list.append(image[:, int(y0):int(y1), int(x0):int(x1)])
 
     return img_list
+
+def filter_boxes(boxes, label):
+    bboxes = []
+    
+    for i, v in enumerate(label):
+        # if target is text 
+        if v == 1:
+            bboxes.append(boxes[i])
+
+    return torch.stack(bboxes)
 
 def display_images(img_list, texts):
     plt.figure(figsize=(16, 8))
